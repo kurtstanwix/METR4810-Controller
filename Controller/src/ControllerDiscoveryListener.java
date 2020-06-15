@@ -46,7 +46,7 @@ public class ControllerDiscoveryListener implements DiscoveryListener {
 
 	@Override
 	public void serviceSearchCompleted(int transID, int respCode) {
-		System.out.println("Completed Search");
+		//System.out.println("Completed Search");
 		serviceStatus = respCode;
 		synchronized (this) {
 			notifyAll();

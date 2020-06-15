@@ -1,6 +1,9 @@
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.microedition.io.StreamConnection;
 
@@ -9,19 +12,16 @@ public class IOConnection implements Runnable {
 	private InputStream in;
 	private OutputStream out;
 
-	private String input;
-	private boolean hasInput = false;
-
-	private String output;
-	private boolean hasOutput = false;
+	private Queue<String> inputToProcess = new ConcurrentLinkedQueue<>();
+	private Queue<String> outputToProcess = new ConcurrentLinkedQueue<>();
 
 	private String name;
 	
-	private boolean closed = true;
+	private AtomicBoolean closed = new AtomicBoolean(true);
 
 	public IOConnection(String name, StreamConnection connection) {
 		if (connection == null) {
-			System.out.println("Null connection: " + name);
+			System.err.println("Null connection: " + name);
 			return;
 		}
 		this.connection = connection;
@@ -29,52 +29,53 @@ public class IOConnection implements Runnable {
 			in = connection.openInputStream();
 		} catch (IOException e) {
 			e.printStackTrace();
+			System.err.println("Couldn't open InputStream of " + name);
 			return;
 		}
 		try {
 			out = connection.openOutputStream();
 		} catch (IOException e1) {
+			e1.printStackTrace();
+			System.err.println("Couldn't open OutputStream of " + name);
 			try {
-				e1.printStackTrace();
 				in.close();
 			} catch (IOException e2) {
 				e2.printStackTrace();
+				System.err.println("Failed to close InputStream of " + name);
 			}
 			return;
 		}
 		this.name = name;
-		this.closed = false;
-		System.out.println("Init: " + name);
+		closed.set(false);
 	}
 
 	public void send(String toSend) {
-		this.output = toSend;
-		this.hasOutput = true;
+		outputToProcess.add(toSend);
 	}
 
 	public boolean hasInput() {
-		return this.hasInput;
+		return !inputToProcess.isEmpty();
 	}
 
 	public String getInput() {
-		hasInput = false;
-		return this.input;
+		return inputToProcess.poll();
 	}
 	
 	public boolean isClosed() {
-		return closed;
+		return closed.get();
 	}
 
 	public synchronized void close() {
-		if (closed) {
+		if (closed.get()) {
 			return;
 		}
 		try {
 			connection.close();
 		} catch (IOException e) {
+			// Most likely already closed
 			e.printStackTrace();
 		}
-		closed = true;
+		closed.set(true);
 	}
 
 	@Override
@@ -84,27 +85,24 @@ public class IOConnection implements Runnable {
 		int inPos = 0;
 		while (true) {
 			synchronized (this) {
-				if (closed) {
+				if (closed.get()) {
 					break;
 				}
 				try {
 					if (in.available() != 0) {
 						readByte = in.read();
 						if (readByte == -1) {
-							input = name + " - Connection closed\r\n";
-							hasInput = true;
+							inputToProcess.add(name + " - Connection closed\r\n");
 							break;
 						}
 						inBuffer[inPos] = (byte) readByte;
 						if (inBuffer[inPos] == '\n') {
 							if (inBuffer[inPos - 1] == '\r') {
-								input = new String(inBuffer, 0, inPos + 1);
 								if (inPos == 1) {
-									input = name + " - Close Requested\r\n";
-									hasInput = true;
+									inputToProcess.add(name + " - Close Requested\r\n");
 									break;
 								}
-								hasInput = true;
+								inputToProcess.add(new String(inBuffer, 0, inPos + 1));
 								inPos = 0;
 								// mode = 1;
 							}
@@ -113,16 +111,16 @@ public class IOConnection implements Runnable {
 						}
 					}
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
+					this.close();
 				}
-				if (hasOutput) {
+				if (!outputToProcess.isEmpty()) {
 					try {
-						out.write(output.getBytes());
+						out.write(outputToProcess.poll().getBytes());
 					} catch (IOException e) {
 						e.printStackTrace();
+						this.close();
 					}
-					hasOutput = false;
 				}
 			}
 		}

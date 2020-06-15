@@ -9,50 +9,65 @@ import com.intel.bluetooth.BlueCoveLocalDeviceProperties;
 
 public class Controller {
 
-	public static void main(String[] args) {
+	private static final int INQUIRY_ATTEMPTS = 3;
+	
+	
+	public static IOConnection debug;
 
+	public static void main(String[] args) {
+		
+		debug = new IOConnection("Debug", new ConsoleConnection());
+		if (!debug.isClosed()) {
+			new Thread(debug).start();
+		}
+		
 		LocalDevice controllerBTDevice = null;
 		try {
 			controllerBTDevice = LocalDevice.getLocalDevice();
 		} catch (BluetoothStateException e) {
-			e.printStackTrace();
+			//e.printStackTrace();
+			debug.send("No Bluetooth host device detected.\r\n");
+			System.exit(1);
 		}
-		BlueCoveImpl.setConfigProperty(BlueCoveConfigProperties.PROPERTY_INQUIRY_DURATION, "1");
+		// Set how long the device spends enquiring for other devices
+		BlueCoveImpl.setConfigProperty(BlueCoveConfigProperties.PROPERTY_INQUIRY_DURATION, "3");
 		
-		System.out.println("" + controllerBTDevice.getProperty(BlueCoveLocalDeviceProperties.LOCAL_DEVICE_DEVICES_LIST));
+		//debug.send("Local Address: " + controllerBTDevice.getBluetoothAddress() + "\r\n");
+		ControllerBT managerBT = new ControllerBT(controllerBTDevice);
 		
-		System.out.println("Local Address: " + controllerBTDevice.getBluetoothAddress());
-		ControllerBT manager = new ControllerBT(controllerBTDevice);
-
-		// controllerBT.
 		// Find the BT devices in the area
 		List<String> foundDevices = null;
-		try {
-			foundDevices = manager.findDevices();
-		} catch (InterruptedException e) {
-			// Shouldn't get here, nothing interrupts findDevices
-			e.printStackTrace();
+		int scanAttempts = 0;
+		for (; scanAttempts < INQUIRY_ATTEMPTS; scanAttempts++) {
+			try {
+				foundDevices = managerBT.findDevices();
+			} catch (InterruptedException e) {
+				// Shouldn't get here, nothing interrupts findDevices
+				e.printStackTrace();
+			}
+			if (foundDevices != null && !foundDevices.isEmpty()) {
+				break; // Found some devices
+			}
+		}
+		if (scanAttempts == INQUIRY_ATTEMPTS) {
+			System.err.println("Scan attempts yielded no devices.");
+			System.exit(1);
 		}
 
 		// List out the found devices
-		System.out.println("Found Devices:");
+		debug.send("Found Devices:\r\n");
 		for (String device : foundDevices) {
-			System.out.format("  Name: \"%s\"\n", device);
-		}
-		// User selects desired BT device
-		//InputStream userInput = System.in;
-		//Scanner userScanner = new Scanner(userInput);
-
-		System.out.print("Enter Bluetooth Device Name: ");
-		String name;
-		IOConnection console = new IOConnection("Console", new ConsoleConnection());
-		if (!console.isClosed()) {
-			new Thread(console).start();
+			debug.send(String.format("  Name: \"%s\"\r\n", device));
 		}
 		
+		/*
+		// User selects desired BT device
+		System.out.print("Enter Bluetooth Device Name: ");
+		String name;
+
 		while (true) {
-			if (console.hasInput()) {
-				name = console.getInput();
+			if (debug.hasInput()) {
+				name = debug.getInput();
 				if (foundDevices.contains(name = name.replace("\n", "").replace("\r", ""))) {
 					break;
 				}
@@ -60,9 +75,12 @@ public class Controller {
 				System.out.print("Enter Bluetooth Device Name: ");
 			}
 		}
+		*/
 
-		IOConnection transport = null;
-		try {
+		//CommsFSM transport = new Transport(manager);
+		CommsFSM handler = new Handler(managerBT);
+		CommsFSM transport = new Transport(managerBT);
+		/*try {
 			transport = new IOConnection("Transport", manager.connect(name));
 			if (!transport.isClosed()) {
 				new Thread(transport).start();
@@ -70,55 +88,47 @@ public class Controller {
 		} catch (InterruptedException e) {
 			// Shouldn't get here, nothing interrupts connect
 			e.printStackTrace();
-		}
+		}*/
 
-		System.out.println("" + controllerBTDevice.getProperty(BlueCoveLocalDeviceProperties.LOCAL_DEVICE_PROPERTY_OPEN_CONNECTIONS));
+		//System.out.println(""
+		//		+ controllerBTDevice.getProperty(BlueCoveLocalDeviceProperties.LOCAL_DEVICE_DEVICES_LIST));
 		while (true) {
-			if (transport.hasInput()) {
-				console.send(transport.getInput());
+			
+			if (debug.hasInput()) {
+				byte[] temp = debug.getInput().getBytes();
+				byte[] toSend = new byte[temp.length];
+				System.arraycopy(temp, 1, toSend, 1, temp.length - 1);
+				if (temp[0] == 'T') {
+					transport.send(toSend);
+				} else if (temp[0] == 'H') {
+					handler.send(toSend);
+				}
 			}
-			if (console.hasInput()) {
-				transport.send(console.getInput());
-			}
-			if (console.isClosed() || transport.isClosed()) {
-				System.out.println("Closing");
+			if (debug.isClosed() || handler.isClosed() || transport.isClosed()) {
+				System.err.println("Closing");
 				break;
 			}
+			handler.process();
+			transport.process();
 		}
+		handler.close();
 		transport.close();
-		console.close();
-		
+		debug.close();
+
 		// RemoteDevice transportConnection = foundDevices.get(name);
 		// manager.connect(transport);
 		/*
-		while (true) {
-			
-			try {
-				if (userInput.available() != 0) {
-					readByte = userInput.read();
-					if (readByte == -1) {
-						System.out.println("Bad Input");
-						break;
-					}
-					inBuffer[inPos] = (byte) readByte;
-					if (inBuffer[inPos] == '\n') {
-						if (inBuffer[inPos - 1] == '\r') {
-							String temp = new String(inBuffer, 0, inPos + 1);
-							os.write(temp.getBytes());
-							inPos = 0;
-							// mode = 1;
-						}
-					} else {
-						inPos++;
-					}
-				}
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-		}
-*/
-		//userInput.close();
+		 * while (true) {
+		 * 
+		 * try { if (userInput.available() != 0) { readByte = userInput.read(); if
+		 * (readByte == -1) { System.out.println("Bad Input"); break; } inBuffer[inPos]
+		 * = (byte) readByte; if (inBuffer[inPos] == '\n') { if (inBuffer[inPos - 1] ==
+		 * '\r') { String temp = new String(inBuffer, 0, inPos + 1);
+		 * os.write(temp.getBytes()); inPos = 0; // mode = 1; } } else { inPos++; } } }
+		 * catch (IOException e) { // TODO Auto-generated catch block
+		 * e.printStackTrace(); } }
+		 */
+		// userInput.close();
 	}
 
 }

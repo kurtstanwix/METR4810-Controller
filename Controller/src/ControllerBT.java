@@ -13,6 +13,7 @@ import javax.microedition.io.Connector;
 import javax.microedition.io.StreamConnection;
 
 import com.intel.bluetooth.BluetoothConsts;
+import com.intel.bluetooth.RemoteDeviceHelper;
 
 public class ControllerBT {
 
@@ -24,25 +25,40 @@ public class ControllerBT {
 
 	// boolean scanFinished = false;
 	// private RemoteDevice hc05device = null;;
-	private LocalDevice controllerBT;
+	private LocalDevice localBTDevice;
 	// final Object deviceLock = new Object();
-	String hc05Url;
+	//String hc05Url;
+	
+	private static final String PASSCODE = "1234";
 
 	private ControllerDiscoveryListener listener = new ControllerDiscoveryListener();
 
 	// BT device name (or address if name can't be obtained) and device pairs
-	Map<String, RemoteDevice> foundDevices;
-
-	// public static void main(String[] args) {
-	// try {
-	// new HC05().go();
-	// } catch (Exception ex) {
-	// Logger.getLogger(HC05.class.getName()).log(Level.SEVERE, null, ex);
-	// }
-	// }
-
-	public ControllerBT(LocalDevice controllerBT) {
-		this.controllerBT = controllerBT;
+	private Map<String, RemoteDevice> foundDevices;
+	
+	public ControllerBT(LocalDevice BTDevice) {
+		this.localBTDevice = BTDevice;
+		//System.out.println("Preknown:");
+		/*RemoteDevice preknown[] = this.controllerBT.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.PREKNOWN);
+		if (preknown != null) {
+		for (RemoteDevice dev : preknown) {
+			System.out.println(dev.getBluetoothAddress());
+			try {
+				RemoteDeviceHelper.removeAuthentication(dev);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				System.out.println("OOPS");
+			}
+		}
+		}
+		//System.out.println("Cached:");
+		/*RemoteDevice cached[] = this.controllerBT.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.CACHED);
+		if (cached != null) {
+		for (RemoteDevice dev : cached) {
+			System.out.println(dev.getBluetoothAddress());
+		}
+		}*/
 	}
 
 	public ControllerBT() throws BluetoothStateException {
@@ -56,8 +72,18 @@ public class ControllerBT {
 		System.out.println("Searching for devices...");
 		synchronized (listener) {
 			listener.clearFoundDevices();
+			RemoteDevice preknown[] = this.localBTDevice.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.PREKNOWN);
+			if (preknown != null) {
+				for (RemoteDevice dev : preknown) {
+					try {
+						RemoteDeviceHelper.removeAuthentication(dev);
+					} catch (IOException e) {
+						// May have already cleared
+					}
+				}
+			}
 			try {
-				controllerBT.getDiscoveryAgent().startInquiry(DiscoveryAgent.GIAC, listener);
+				localBTDevice.getDiscoveryAgent().startInquiry(DiscoveryAgent.GIAC, listener);
 			} catch (BluetoothStateException e) {
 				// Couldn't start the inquiry
 				e.printStackTrace();
@@ -85,9 +111,9 @@ public class ControllerBT {
 
 		scanFinished = false;
 		synchronized (listener) {
-			//listener.clearFoundServices();
+			listener.clearFoundServices();
 			try {
-				controllerBT.getDiscoveryAgent().searchServices(attrIDs, searchUUIDSet, device, listener);
+				localBTDevice.getDiscoveryAgent().searchServices(attrIDs, searchUUIDSet, device, listener);
 			} catch (BluetoothStateException e2) {
 				e2.printStackTrace();
 				return null;
@@ -97,9 +123,9 @@ public class ControllerBT {
 		if (listener.getFoundServices().size() == 0) {
 			return null;
 		}
-		// Connect to the first service found
 		StreamConnection result = null;
 		try {
+			RemoteDeviceHelper.authenticate(device, PASSCODE);
 			// Connect to the first service found
 			result = (StreamConnection) Connector.open(listener.getFoundServices().get(0).getConnectionURL(ServiceRecord.NOAUTHENTICATE_NOENCRYPT, true));
 		} catch (IOException e) {
