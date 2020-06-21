@@ -86,6 +86,18 @@ public abstract class CommsFSM implements Runnable {
 		Thread.currentThread().setName(deviceName + "FSM");
 		// Process the FSM until closed
 		while (!closed) {
+			if (device.isClosed()) {
+				Controller.send("Lost connection to " + deviceName + "\r\n", false);
+				try {
+					device = new IOConnection(deviceName, manager.connect(deviceName));
+					if (!device.isClosed()) {
+						new Thread(device).start();
+						Controller.send("Reconnected to " + deviceName + "\r\n", false);
+					}
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
 			processFSM();
 			try {
 				Thread.sleep(10);
