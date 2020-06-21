@@ -69,7 +69,7 @@ public class ControllerBT {
 		// scan for all devices:
 		// System.out.println(LocalDevice.getProperty(BlueCoveLocalDeviceProperties.LOCAL_DEVICE_PROPERTY_STACK));
 
-		System.out.println("Searching for devices...");
+		Controller.send("Searching for devices...");
 		synchronized (listener) {
 			listener.clearFoundDevices();
 			RemoteDevice preknown[] = this.localBTDevice.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.PREKNOWN);

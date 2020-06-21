@@ -16,7 +16,7 @@ public class IOConnection implements Runnable {
 	private Queue<String> outputToProcess = new ConcurrentLinkedQueue<>();
 
 	private String name;
-	
+
 	private AtomicBoolean closed = new AtomicBoolean(true);
 
 	public IOConnection(String name, StreamConnection connection) {
@@ -60,7 +60,7 @@ public class IOConnection implements Runnable {
 	public String getInput() {
 		return inputToProcess.poll();
 	}
-	
+
 	public boolean isClosed() {
 		return closed.get();
 	}
@@ -83,31 +83,34 @@ public class IOConnection implements Runnable {
 		byte[] inBuffer = new byte[1024];
 		int readByte = -1;
 		int inPos = 0;
+		Thread.currentThread().setName(name + "IO");
 		while (true) {
 			synchronized (this) {
 				if (closed.get()) {
 					break;
 				}
 				try {
-					if (in.available() != 0) {
-						readByte = in.read();
-						if (readByte == -1) {
-							inputToProcess.add(name + " - Connection closed\r\n");
-							break;
-						}
-						inBuffer[inPos] = (byte) readByte;
-						if (inBuffer[inPos] == '\n') {
-							if (inBuffer[inPos - 1] == '\r') {
-								if (inPos == 1) {
-									inputToProcess.add(name + " - Close Requested\r\n");
-									break;
-								}
-								inputToProcess.add(new String(inBuffer, 0, inPos + 1));
-								inPos = 0;
-								// mode = 1;
+					if (in != null) {
+						if (in.available() != 0) {
+							readByte = in.read();
+							if (readByte == -1) {
+								inputToProcess.add(name + " - Connection closed\r\n");
+								break;
 							}
-						} else {
-							inPos++;
+							inBuffer[inPos] = (byte) readByte;
+							if (inBuffer[inPos] == '\n') {
+								if (inBuffer[inPos - 1] == '\r') {
+									if (inPos == 1) {
+										inputToProcess.add(name + " - Close Requested\r\n");
+										break;
+									}
+									inputToProcess.add(new String(inBuffer, 0, inPos + 1));
+									inPos = 0;
+									// mode = 1;
+								}
+							} else {
+								inPos++;
+							}
 						}
 					}
 				} catch (IOException e) {
@@ -122,9 +125,16 @@ public class IOConnection implements Runnable {
 						this.close();
 					}
 				}
+				
+			}
+			try {
+				Thread.sleep(5);
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
 		}
-		System.out.println("Closing " + name);
+		System.err.println("Closing " + name);
 		this.close();
 	}
 }
