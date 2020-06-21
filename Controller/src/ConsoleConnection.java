@@ -6,16 +6,31 @@ import java.io.OutputStream;
 
 import javax.microedition.io.StreamConnection;
 
-
-// StreamConnection wrapper for custom in and out streams
+/**
+ * Wrapper class for a StreamConnection to allow arbitrary underlying in and out
+ * streams.
+ */
 public class ConsoleConnection implements StreamConnection {
+	// Underlying input stream
 	private InputStream input;
+	// Underlying output stream
 	private OutputStream output;
-	
+
+	/**
+	 * Create a new Connection with sysin and sysout.
+	 */
 	public ConsoleConnection() {
 		this(System.in, System.out);
 	}
-	
+
+	/**
+	 * Create a new Connection with arbitrary input and output
+	 * 
+	 * @param input
+	 *            inputstream to connect to
+	 * @param output
+	 *            outputstream to connect to
+	 */
 	public ConsoleConnection(InputStream input, OutputStream output) {
 		this.input = input;
 		this.output = output;

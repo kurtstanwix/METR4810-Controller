@@ -21,67 +21,59 @@ public class ControllerBT {
 	private static final int SERIAL_PORT_CLASS = 0x1101;
 	// Bluetooth profile service name for serial port profile
 	private static final int SERIAL_PORT_PROFILE = 0x0100;
+	// Flag to indicate when a scan is finished
 	boolean scanFinished = false;
 
-	// boolean scanFinished = false;
-	// private RemoteDevice hc05device = null;;
+	// The local Bluetooth adaptor
 	private LocalDevice localBTDevice;
-	// final Object deviceLock = new Object();
-	//String hc05Url;
-	
+
+	// Passcode to connect to Bluetooth devices
 	private static final String PASSCODE = "1234";
 
+	// Listener service to find Bluetooth devices and services
 	private ControllerDiscoveryListener listener = new ControllerDiscoveryListener();
 
 	// BT device name (or address if name can't be obtained) and device pairs
 	private Map<String, RemoteDevice> foundDevices;
-	
+
+	/**
+	 * Setup the Bluetooth controller
+	 * 
+	 * @param BTDevice
+	 *            local BLuetooth device to use for connections.
+	 */
 	public ControllerBT(LocalDevice BTDevice) {
 		this.localBTDevice = BTDevice;
-		//System.out.println("Preknown:");
-		/*RemoteDevice preknown[] = this.controllerBT.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.PREKNOWN);
-		if (preknown != null) {
-		for (RemoteDevice dev : preknown) {
-			System.out.println(dev.getBluetoothAddress());
-			try {
-				RemoteDeviceHelper.removeAuthentication(dev);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				System.out.println("OOPS");
-			}
-		}
-		}
-		//System.out.println("Cached:");
-		/*RemoteDevice cached[] = this.controllerBT.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.CACHED);
-		if (cached != null) {
-		for (RemoteDevice dev : cached) {
-			System.out.println(dev.getBluetoothAddress());
-		}
-		}*/
 	}
 
+	/**
+	 * Setup the Bluetooth controller with the API's chosen local device.
+	 * 
+	 * @throws BluetoothStateException
+	 */
 	public ControllerBT() throws BluetoothStateException {
 		this(LocalDevice.getLocalDevice());
 	}
 
+	/**
+	 * Finds the list of nearby Bluetooth devices with their friendly names
+	 * 
+	 * @return List of the friendly names of nearby devices, or their address if
+	 *         friendly name could not be retrieved.
+	 * @throws InterruptedException
+	 */
 	public List<String> findDevices() throws InterruptedException {
-		// scan for all devices:
-		// System.out.println(LocalDevice.getProperty(BlueCoveLocalDeviceProperties.LOCAL_DEVICE_PROPERTY_STACK));
-
-		Controller.send("Searching for devices...");
+		Controller.send("Searching for devices...", false);
+		// Syncronised to be interrupted by the listener when complete
 		synchronized (listener) {
-			listener.clearFoundDevices();
-			RemoteDevice preknown[] = this.localBTDevice.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.PREKNOWN);
-			if (preknown != null) {
-				for (RemoteDevice dev : preknown) {
-					try {
-						RemoteDeviceHelper.removeAuthentication(dev);
-					} catch (IOException e) {
-						// May have already cleared
-					}
-				}
-			}
+			listener.clearFoundDevices(); // Forget previous searches
+			/*
+			 * RemoteDevice preknown[] =
+			 * this.localBTDevice.getDiscoveryAgent().retrieveDevices(DiscoveryAgent.
+			 * PREKNOWN); if (preknown != null) { for (RemoteDevice dev : preknown) { try {
+			 * RemoteDeviceHelper.removeAuthentication(dev); } catch (IOException e) { //
+			 * May have already cleared } } }
+			 */
 			try {
 				localBTDevice.getDiscoveryAgent().startInquiry(DiscoveryAgent.GIAC, listener);
 			} catch (BluetoothStateException e) {
@@ -95,21 +87,27 @@ public class ControllerBT {
 		return new ArrayList<>(foundDevices.keySet());
 	}
 
-	// Must be called after findDevices
-	// deviceName must be a name from the list returned by foundDevices
+	/**
+	 * Connects to device found by findDevices. Call this after findDevices.
+	 * 
+	 * @param deviceName
+	 *            name of the device to connect to, must be in list returned by
+	 *            findDevices
+	 * @return a StreamConnection to the Bluetooth device, null if could not connect
+	 * @throws InterruptedException
+	 */
 	public StreamConnection connect(String deviceName) throws InterruptedException {
-
 		RemoteDevice device = foundDevices.get(deviceName);
 		if (device == null) {
+			// Name was not in found list
 			return null;
 		}
-		// search for services:
-		// UUID uuid = new UUID(0x1101); //scan for btspp://... services (as HC-05
-		// offers it)
+		// Scan for "btspp://..." services as HC-05 offers it
 		UUID[] searchUUIDSet = new UUID[] { BluetoothConsts.SERIAL_PORT_UUID };
-		int[] attrIDs = new int[] { SERIAL_PORT_PROFILE }; // service name
+		int[] attrIDs = new int[] { SERIAL_PORT_PROFILE }; // Service name
 
 		scanFinished = false;
+		// Syncronised to be interrupted by the listener when complete
 		synchronized (listener) {
 			listener.clearFoundServices();
 			try {
@@ -121,44 +119,18 @@ public class ControllerBT {
 			listener.wait();
 		}
 		if (listener.getFoundServices().size() == 0) {
-			return null;
+			return null; // No devices with the correct service offered
 		}
 		StreamConnection result = null;
 		try {
+			// Automatically authenticate
 			RemoteDeviceHelper.authenticate(device, PASSCODE);
-			// Connect to the first service found
-			result = (StreamConnection) Connector.open(listener.getFoundServices().get(0).getConnectionURL(ServiceRecord.NOAUTHENTICATE_NOENCRYPT, true));
+			// Connect to the first service found (only one on HC-05)
+			result = (StreamConnection) Connector.open(
+					listener.getFoundServices().get(0).getConnectionURL(ServiceRecord.NOAUTHENTICATE_NOENCRYPT, true));
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		return result;
 	}
-	/*
-	 * while (!scanFinished) { try { Thread.sleep(500); } catch
-	 * (InterruptedException e) { // TODO Auto-generated catch block
-	 * e.printStackTrace(); } }
-	 * 
-	 * System.out.println("Connected to ADDR: " + device.getBluetoothAddress());
-	 * System.out.println(hc05Url);
-	 * 
-	 * // if you know your hc05Url this is all you need: StreamConnection
-	 * streamConnection = null; OutputStream os = null; InputStream is = null; try {
-	 * streamConnection = (StreamConnection) Connector.open(hc05Url); os =
-	 * streamConnection.openOutputStream(); is = streamConnection.openInputStream();
-	 * } catch (IOException e2) { // TODO Auto-generated catch block
-	 * e2.printStackTrace(); }
-	 * 
-	 * boolean receiving = false; byte[] btBuffer = new byte[1024]; byte[] inBuffer
-	 * = new byte[1024]; InputStream userInput = System.in; int readByte = -1; int
-	 * btPos = 0; int inPos = 0; int mode = 0; String input; while (true) { if (mode
-	 * == 0) {
-	 * 
-	 * 
-	 * } else if (mode == 1) { input = "+STATE:CONNECTED\r\n"; try {
-	 * os.write(input.getBytes()); } catch (IOException e) { // TODO Auto-generated
-	 * catch block e.printStackTrace(); } mode = 0; } }
-	 * System.out.println("OUT OF HERE"); // } // is. try { os.close(); is.close();
-	 * streamConnection.close(); } catch (IOException e) { // TODO Auto-generated
-	 * catch block e.printStackTrace(); } }
-	 */
 }

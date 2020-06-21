@@ -7,17 +7,30 @@ import java.util.List;
 
 import javax.swing.JTextArea;
 
-
-
 public class TextAreaOutputStream extends OutputStream {
-	
-	private byte[] oneByte; // array for write(int val);
+	// Array for write(int val);
+	private byte[] oneByte;
+	// Appender to stitch together the data
 	private Appender appender;
 
+	/**
+	 * Create a stream to write to a text area.
+	 * 
+	 * @param txtara
+	 *            text area to write to
+	 */
 	public TextAreaOutputStream(JTextArea txtArea) {
 		this(txtArea, 1000);
 	}
 
+	/**
+	 * Create a stream to write to a text area.
+	 * 
+	 * @param txtara
+	 *            text area to write to
+	 * @param maxlin
+	 *            maximum number of lines to hold in text area
+	 */
 	public TextAreaOutputStream(JTextArea txtara, int maxlin) {
 		if (maxlin < 1) {
 			throw new IllegalArgumentException(
@@ -27,55 +40,75 @@ public class TextAreaOutputStream extends OutputStream {
 		appender = new Appender(txtara, maxlin);
 	}
 
-	/** Clear the current console text area. */
+	/**
+	 * Clear the current console text area.
+	 */
 	public synchronized void clear() {
 		if (appender != null) {
 			appender.clear();
 		}
 	}
 
+	@Override
 	public synchronized void close() {
 		appender = null;
 	}
 
+	@Override
 	public synchronized void flush() {
 	}
 
+	@Override
 	public synchronized void write(int val) {
 		oneByte[0] = (byte) val;
 		write(oneByte, 0, 1);
 	}
 
+	@Override
 	public synchronized void write(byte[] ba) {
 		write(ba, 0, ba.length);
 	}
 
+	@Override
 	public synchronized void write(byte[] ba, int str, int len) {
 		if (appender != null) {
 			appender.append(bytesToString(ba, str, len));
 		}
 	}
 
+	/**
+	 * Convert the byte array to a string in the correct encoding
+	 * 
+	 * @param ba
+	 *            bytes to convert
+	 * @param str
+	 *            offset into the byte array to start
+	 * @param len
+	 *            number of characters to convert
+	 * @return String of converted bytes
+	 */
 	static private String bytesToString(byte[] ba, int str, int len) {
 		try {
 			return new String(ba, str, len, "UTF-8");
 		} catch (UnsupportedEncodingException thr) {
 			return new String(ba, str, len);
-		} // all JVMs are required to support UTF-8
+		} // All JVMs are required to support UTF-8
 	}
-
-	// *************************************************************************************************
-	// STATIC MEMBERS
-	// *************************************************************************************************
 
 	static class Appender implements Runnable {
 		private final JTextArea textArea;
-		private final int maxLines; // maximum lines allowed in text area
-		private final LinkedList<Integer> lengths; // length of lines within text area
-		private final List<String> values; // values waiting to be appended
+		// Maximum lines allowed in text area
+		private final int maxLines;
+		// Length of lines within text area
+		private final LinkedList<Integer> lengths;
+		// Values waiting to be appended
+		private final List<String> values;
 
-		private int curLength; // length of current line
+		// Length of current line
+		private int curLength;
+		// Flag to clear buffer
 		private boolean clear;
+		// Queue of items to append
 		private boolean queue;
 
 		Appender(JTextArea txtara, int maxlin) {
@@ -89,6 +122,12 @@ public class TextAreaOutputStream extends OutputStream {
 			queue = true;
 		}
 
+		/**
+		 * Add a string to the list
+		 * 
+		 * @param val
+		 *            string to add to list
+		 */
 		synchronized void append(String val) {
 			values.add(val);
 			if (queue) {
@@ -97,6 +136,9 @@ public class TextAreaOutputStream extends OutputStream {
 			}
 		}
 
+		/**
+		 * Clear all the output in the list
+		 */
 		synchronized void clear() {
 			clear = true;
 			curLength = 0;
@@ -109,6 +151,7 @@ public class TextAreaOutputStream extends OutputStream {
 		}
 
 		// MUST BE THE ONLY METHOD THAT TOUCHES textArea!
+		@Override
 		public synchronized void run() {
 			if (clear) {
 				textArea.setText("");

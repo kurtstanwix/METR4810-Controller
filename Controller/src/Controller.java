@@ -8,9 +8,12 @@ import com.intel.bluetooth.BlueCoveConfigProperties;
 import com.intel.bluetooth.BlueCoveImpl;
 
 public class Controller {
+	// Flag to show debug messages
+	private static boolean showDebug = false;
+
 	// How many attempts to check for Bluetooth devices before exiting
 	private static final int INQUIRY_ATTEMPTS = 3;
-	
+
 	// Instance of Transport System's FSM
 	private static Transport transport;
 
@@ -19,7 +22,7 @@ public class Controller {
 
 	// Wrapper of the terminal for IO
 	private static IOConnection debug;
-	
+
 	// Instance for the GUI, only one should be active
 	private static GUI gui;
 
@@ -29,15 +32,18 @@ public class Controller {
 	public static final int TRANSPORT_MODE = 1;
 	// Identifies which system commands are to be sent to
 	public static int mode = HANDLER_MODE;
-	
+
 	// Pulse width for end effector to release container
 	public static final int RELEASING_PULSE_WIDTH = 1600;
-
 	// Pulse width for end effector to hold container
 	public static final int GRABBING_PULSE_WIDTH = 1040;
 
+	// Pulse width for centre of servo
+	public static final int CENTRE_PULSE_WIDTH = 1500;
+
 	/**
 	 * Get the instance of the Handler System's FSM
+	 * 
 	 * @return Handler System FSM instance. Null if it is not connected
 	 */
 	public static Handler getHandler() {
@@ -46,17 +52,43 @@ public class Controller {
 
 	/**
 	 * Get the instance of the Transport System's FSM
+	 * 
 	 * @return Transport System FSM instance. Null if it is not connected
 	 */
 	public static Transport getTransport() {
 		return transport;
 	}
-	
+
+	/**
+	 * Returns true if showing debug messages, false otherwise
+	 * 
+	 * @return true if showing debug messages, false otherwise
+	 */
+	public static boolean getDebug() {
+		return showDebug;
+	}
+
+	/**
+	 * Turns on/off the debug messages.
+	 * 
+	 * @param state
+	 */
+	public static void setDebug(boolean state) {
+		showDebug = state;
+	}
+
 	/**
 	 * Sends a String the terminal and GUI console
-	 * @param toSend String to display
+	 * 
+	 * @param toSend
+	 *            String to display.
+	 * @param isDebug
+	 *            true if this is a debug message.
 	 */
-	public static void send(String toSend) {
+	public static void send(String toSend, boolean isDebug) {
+		if (isDebug && !showDebug) {
+			return;
+		}
 		if (gui != null) {
 			gui.print(toSend);
 		}
@@ -66,9 +98,11 @@ public class Controller {
 	}
 
 	/**
-	 * Send a String to the Transport or Handler System if prefixed by 'T' or
-	 * 'H' respectively.
-	 * @param toSend String to send, prefixed with 'T' or 'H' for destination.
+	 * Send a String to the Transport or Handler System if prefixed by 'T' or 'H'
+	 * respectively.
+	 * 
+	 * @param toSend
+	 *            String to send, prefixed with 'T' or 'H' for destination.
 	 */
 	public static void sendToBluetooth(String toSend) {
 		if (toSend.charAt(0) == 'T') {
@@ -82,13 +116,13 @@ public class Controller {
 				handler.processAndSendCommand(toSend.substring(1));
 			}
 		} else {
-			send("Invalid Device\r\n");
+			send("Invalid Device\r\n", false);
 		}
 	}
 
 	public static void main(String[] args) {
-		GUI gui = new GUI();
-		
+		new GUI();
+
 		// A system in and out wrapper
 		debug = new IOConnection("Debug", new ConsoleConnection());
 		if (!debug.isClosed()) {
@@ -99,10 +133,10 @@ public class Controller {
 		try {
 			controllerBTDevice = LocalDevice.getLocalDevice();
 		} catch (BluetoothStateException e) {
-			debug.send("No Bluetooth host device detected.\r\n");
+			send("No Bluetooth host device detected.\r\n", false);
 			System.exit(1); // Need to configure PC to have bluetooth
 		}
-		
+
 		// Set how long the device spends enquiring for other devices
 		BlueCoveImpl.setConfigProperty(BlueCoveConfigProperties.PROPERTY_INQUIRY_DURATION, "3");
 
@@ -129,9 +163,9 @@ public class Controller {
 		}
 
 		// List out the found devices, for debug purposes
-		send("Found Devices:\r\n");
+		send("Found Devices:\r\n", false);
 		for (String device : foundDevices) {
-			send(String.format("  Name: \"%s\"\r\n", device));
+			send(String.format("  Name: \"%s\"\r\n", device), false);
 		}
 
 		// Set up the Handler System's comms FSM thread
@@ -141,12 +175,15 @@ public class Controller {
 		// Set up the Transport System's comms FSM thread
 		transport = new Transport(managerBT);
 		new Thread(transport).start();
-		
+
 		// Set handler initial conditions
 		if (handler != null) {
-			while(!handler.setPulseWidth(2, 1500));
-			while(!handler.setPulseWidth(4, 1500));
-			while(!handler.setPulseWidth(5, RELEASING_PULSE_WIDTH));
+			while (!handler.setPulseWidth(2, CENTRE_PULSE_WIDTH))
+				;
+			while (!handler.setPulseWidth(4, CENTRE_PULSE_WIDTH))
+				;
+			while (!handler.setPulseWidth(5, RELEASING_PULSE_WIDTH))
+				;
 		}
 
 		while (true) {

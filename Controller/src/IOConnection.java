@@ -8,19 +8,34 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.microedition.io.StreamConnection;
 
 public class IOConnection implements Runnable {
-	StreamConnection connection;
+	// Underlying Connection
+	private StreamConnection connection;
+	// Input of connection
 	private InputStream in;
+	// Output of connection
 	private OutputStream out;
 
+	// FIFO queue of String inputs
 	private Queue<String> inputToProcess = new ConcurrentLinkedQueue<>();
+	// FIFO queue of String outputs
 	private Queue<String> outputToProcess = new ConcurrentLinkedQueue<>();
 
+	// Name of the IOConnection for debugging
 	private String name;
 
+	// IO Thread closed flag
 	private AtomicBoolean closed = new AtomicBoolean(true);
 
+	/**
+	 * Create an IO connection with the given name and input/output stream
+	 * 
+	 * @param name
+	 *            name of the connection
+	 * @param connection
+	 *            connection containing the input and output streams
+	 */
 	public IOConnection(String name, StreamConnection connection) {
-		if (connection == null) {
+		if (connection == null) { // Don't connect to a null
 			System.err.println("Null connection: " + name);
 			return;
 		}
@@ -49,22 +64,47 @@ public class IOConnection implements Runnable {
 		closed.set(false);
 	}
 
+	/**
+	 * Send a string to the output stream
+	 * 
+	 * @param toSend
+	 *            String to send to the output stream
+	 */
 	public void send(String toSend) {
 		outputToProcess.add(toSend);
 	}
 
+	/**
+	 * Checks if there is some input ready
+	 * 
+	 * @return true if input ready, false otherwise
+	 */
 	public boolean hasInput() {
 		return !inputToProcess.isEmpty();
 	}
 
+	/**
+	 * Get the next input from the input stream. Check hasInput first to ensure
+	 * there is some input first.
+	 * 
+	 * @return next input from stream, or null if none
+	 */
 	public String getInput() {
 		return inputToProcess.poll();
 	}
 
+	/**
+	 * Returns if IO thread is closed
+	 * 
+	 * @return true if IO thread is closed, false otherwise
+	 */
 	public boolean isClosed() {
 		return closed.get();
 	}
 
+	/**
+	 * Closes the IO thread
+	 */
 	public synchronized void close() {
 		if (closed.get()) {
 			return;
@@ -91,22 +131,23 @@ public class IOConnection implements Runnable {
 				}
 				try {
 					if (in != null) {
-						if (in.available() != 0) {
+						if (in.available() != 0) { // There's a byte ready
 							readByte = in.read();
-							if (readByte == -1) {
+							if (readByte == -1) { // Connection closed indicator
 								inputToProcess.add(name + " - Connection closed\r\n");
 								break;
 							}
 							inBuffer[inPos] = (byte) readByte;
 							if (inBuffer[inPos] == '\n') {
 								if (inBuffer[inPos - 1] == '\r') {
-									if (inPos == 1) {
+									// EOL received
+									if (inPos == 1) { // Blank line, close connection
 										inputToProcess.add(name + " - Close Requested\r\n");
 										break;
 									}
+									// Add the received input to the queue
 									inputToProcess.add(new String(inBuffer, 0, inPos + 1));
 									inPos = 0;
-									// mode = 1;
 								}
 							} else {
 								inPos++;
@@ -117,7 +158,7 @@ public class IOConnection implements Runnable {
 					e.printStackTrace();
 					this.close();
 				}
-				if (!outputToProcess.isEmpty()) {
+				if (!outputToProcess.isEmpty()) { // Got some output to send
 					try {
 						out.write(outputToProcess.poll().getBytes());
 					} catch (IOException e) {
@@ -125,12 +166,11 @@ public class IOConnection implements Runnable {
 						this.close();
 					}
 				}
-				
+
 			}
 			try {
-				Thread.sleep(5);
+				Thread.sleep(5); // Or else this has a high CPU usage
 			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}
